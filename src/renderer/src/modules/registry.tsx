@@ -165,22 +165,9 @@ export const MODULES: ModuleMeta[] = [
     icon: PawPrint,
     description: 'A companion that lives on your desktop.',
     shortcut: '7',
-    status: 'planned',
+    status: 'ready',
     phase: 5,
-    group: 'tools',
-    planned: {
-      features: [
-        'Transparent always-on-top window with idle, walk, sleep and interaction animations',
-        'Personalities, characters, size and position',
-        'Optional CPU / RAM warnings, reminders and timers',
-        'Almost-invisible "focus" mode'
-      ],
-      requirements: [
-        'Separate lightweight BrowserWindow (transparent, click-through where idle)',
-        'Sprite sheets / Lottie animations for characters',
-        'Frame-rate throttling to keep CPU usage near zero'
-      ]
-    }
+    group: 'tools'
   },
   {
     id: 'automation',

@@ -5,6 +5,7 @@ import { SYSTEM_TOOLS, type AppInfo, type SystemTool } from '@shared/app'
 import { launchTool } from '../services/tools'
 import { settingsSchema } from '@shared/settings'
 import type { SettingsStore } from '../services/settings-store'
+import type { PetController } from '../services/pet/controller'
 import { SystemMonitor } from '../services/system/monitor'
 import { ProcessService } from '../services/system/processes'
 import { handle } from './validate'
@@ -20,12 +21,21 @@ const settingsPatchSchema = z
     startup: settingsSchema.shape.startup.partial(),
     notifications: settingsSchema.shape.notifications.partial(),
     dashboard: settingsSchema.shape.dashboard.partial(),
-    commandPalette: settingsSchema.shape.commandPalette.partial()
+    commandPalette: settingsSchema.shape.commandPalette.partial(),
+    pet: settingsSchema.shape.pet.partial()
   })
   .partial()
   .strict()
 
-export function registerIpc(store: SettingsStore, monitor: SystemMonitor): void {
+const petCommandSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('reset-position') }).strict(),
+  z.object({ type: z.literal('sleep') }).strict(),
+  z.object({ type: z.literal('wake') }).strict(),
+  z.object({ type: z.literal('timer'), minutes: z.number().int().min(1).max(180) }).strict(),
+  z.object({ type: z.literal('cancel-timer') }).strict()
+])
+
+export function registerIpc(store: SettingsStore, monitor: SystemMonitor, pet: PetController): void {
   handle(IPC.appInfo, none, (): AppInfo => ({
     name: app.getName(),
     version: app.getVersion(),
@@ -81,4 +91,23 @@ export function registerIpc(store: SettingsStore, monitor: SystemMonitor): void 
     z.object({ pid: z.number().int().positive().max(2 ** 31), name: z.string().min(1).max(260) }).strict(),
     ({ pid, name }) => processes.kill(pid, name)
   )
+
+  // ---- desktop pet: app window -------------------------------------------
+  handle(IPC.petStatus, none, () => pet.status())
+  handle(IPC.petCommand, petCommandSchema, (cmd) => pet.command(cmd))
+
+  // ---- desktop pet: only from the pet window itself ----------------------
+  const fromPet = <S extends z.ZodType>(channel: string, schema: S, fn: (payload: z.infer<S>) => unknown): void =>
+    handle(channel, schema, (payload, event) => {
+      if (!pet.owns(event.sender)) throw new Error(`"${channel}" is only available to the pet window`)
+      return fn(payload)
+    })
+  fromPet(IPC.petViewGet, none, () => pet.view())
+  fromPet(IPC.petInteractive, z.boolean(), (on) => pet.setInteractive(on))
+  fromPet(IPC.petDragStart, none, () => pet.dragStart())
+  fromPet(IPC.petDragEnd, none, () => pet.dragEnd())
+  fromPet(IPC.petPoke, none, () => pet.poke())
+  fromPet(IPC.petMenu, none, () => pet.showMenu())
+  fromPet(IPC.petOpenApp, none, () => pet.openApp())
+  fromPet(IPC.petDismissBubble, none, () => pet.dismissBubble())
 }

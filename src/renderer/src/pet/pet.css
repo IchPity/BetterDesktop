@@ -1,0 +1,76 @@
+/* The pet window is fully transparent – only the sprite and bubble are drawn. */
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+}
+
+.pet-stage {
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  transition: opacity 0.25s ease;
+}
+
+.pet-stage.focus {
+  opacity: 0.3;
+}
+.pet-stage.focus.hover {
+  opacity: 1;
+}
+
+.pet-hit {
+  cursor: grab;
+  line-height: 0;
+}
+.pet-hit.dragging {
+  cursor: grabbing;
+}
+
+.pet-bubble {
+  position: absolute;
+  left: 50%;
+  max-width: calc(100% - 16px);
+  box-sizing: border-box;
+  transform: translateX(-50%);
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgb(19 20 26 / 0.94);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  box-shadow: 0 6px 18px -6px rgb(0 0 0 / 0.5);
+  color: #e9eaef;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: center;
+  cursor: pointer;
+  animation: bubble-in 0.18s ease-out;
+}
+.pet-bubble.warning {
+  border-color: #f5b041;
+}
+.pet-bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 8px;
+  height: 8px;
+  transform: translateX(-50%) rotate(45deg);
+  background: inherit;
+  border-right: inherit;
+  border-bottom: inherit;
+}
+
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px) scale(0.96);
+  }
+}

@@ -9,6 +9,7 @@ src/
     settings.ts           Settings schema (zod), defaults, merge helpers
     system.ts             System metric types (null = not available)
     app.ts                App info, whitelisted Windows tools
+    pet.ts                Desktop Pet view/status/command types
   main/                   Electron main process (Node.js)
     index.ts              App lifecycle, single instance, wiring
     window.ts             BrowserWindow creation & security options
@@ -17,6 +18,7 @@ src/
     services/
       settings-store.ts   JSON settings with debounced atomic writes
       tools.ts            Whitelisted launcher for Windows tools
+      pet/controller.ts   Desktop Pet window + behaviour (walk, sleep, drag, timers, warnings)
       system/
         monitor.ts        Live metrics loop + background caches
         providers.ts      WindowsProvider (helper) / GenericProvider (systeminformation)
@@ -26,9 +28,12 @@ src/
     dev/screenshots.ts    Dev-only: automated screenshots (BD_SCREENSHOT_DIR)
   preload/
     index.ts              The ONLY API the UI can call (window.bd)
+    pet.ts                Tiny API for the pet window (window.pet)
   renderer/               React UI
     src/
       App.tsx             Shell, theme sync, global shortcuts
+      pet/                Second renderer entry (pet.html) for the pet window
+      components/pet/     PetSprite – SVG characters + CSS animations (shared)
       components/ui/      Design system (Button, Card, Switch, Modal, charts…)
       components/layout/  TitleBar, Sidebar, Page, Toaster
       components/CommandPalette.tsx
@@ -68,6 +73,15 @@ Windows tools like `systeminformation` spawn a new PowerShell for almost every q
 The helper (`win-helper.ps1`) only answers a fixed set of commands over stdin/stdout and is shut down after 30 s without requests. Monitoring stops completely when no window is subscribed and pauses while the window is minimized (configurable).
 
 GPU load is computed the same way Task Manager does it (per adapter: maximum over engine types of the summed engine utilization), so it works for Intel, AMD and NVIDIA. BetterDesktop deliberately does **not** poll `nvidia-smi`, because that keeps a sleeping laptop GPU awake.
+
+## Desktop Pet
+
+The pet is a second, tiny `BrowserWindow` (transparent, frameless, always on top, not focusable, no taskbar entry) with its own preload (`window.pet`) and renderer entry (`pet.html`). The main process (`PetController`) owns all behaviour and moves the window; the renderer only draws the SVG character for the state it is told.
+
+- **Click-through:** the window ignores the mouse (`setIgnoreMouseEvents(true, { forward: true })`) except while the cursor is over the sprite or speech bubble.
+- **Cheap:** animations are CSS transforms; the 30/60 fps frame timer only runs while walking, falling or being dragged. A 5 s watch loop does idle detection (`powerMonitor.getSystemIdleTime`) and CPU/RAM checks with `os.cpus()` / `os.totalmem()` – no extra processes.
+- **Isolated IPC:** pet channels are only accepted from the pet window's own `webContents`; the app window controls the pet through settings and `pet:command`.
+- Both preloads are built with `isolatedEntries` because sandboxed preloads cannot load shared chunks.
 
 ## Settings
 

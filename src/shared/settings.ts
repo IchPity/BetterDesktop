@@ -56,6 +56,12 @@ export const DEFAULT_WIDGETS: WidgetInstance[] = [
 
 export const DEFAULT_LAYOUT_ID = 'default'
 
+export const PET_CHARACTERS = ['blob', 'cat', 'bot'] as const
+export type PetCharacter = (typeof PET_CHARACTERS)[number]
+
+export const PET_PERSONALITIES = ['calm', 'playful', 'sleepy'] as const
+export type PetPersonality = (typeof PET_PERSONALITIES)[number]
+
 export const settingsSchema = z.object({
   version: z.literal(1),
   appearance: z.object({
@@ -83,6 +89,19 @@ export const settingsSchema = z.object({
   }),
   commandPalette: z.object({
     recent: z.array(z.string().max(128)).max(20)
+  }),
+  pet: z.object({
+    enabled: z.boolean(),
+    character: z.enum(PET_CHARACTERS),
+    personality: z.enum(PET_PERSONALITIES),
+    size: z.number().min(0.6).max(1.6),
+    /** Almost invisible, no wandering, only important messages. */
+    focusMode: z.boolean(),
+    /** Fall asleep when the PC has had no input for a few minutes. */
+    sleepWhenIdle: z.boolean(),
+    resourceWarnings: z.boolean(),
+    cpuThreshold: z.number().int().min(50).max(100),
+    ramThreshold: z.number().int().min(50).max(100)
   })
 })
 
@@ -115,6 +134,17 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   commandPalette: {
     recent: []
+  },
+  pet: {
+    enabled: false,
+    character: 'blob',
+    personality: 'calm',
+    size: 1,
+    focusMode: false,
+    sleepWhenIdle: true,
+    resourceWarnings: true,
+    cpuThreshold: 90,
+    ramThreshold: 90
   }
 }
 

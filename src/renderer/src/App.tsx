@@ -10,6 +10,7 @@ import { MODULES, MODULE_MAP, type ModuleId } from '@/modules/registry'
 import { Overview } from '@/modules/overview/Overview'
 import { PcControlCenter } from '@/modules/pc/PcControlCenter'
 import { NetworkMonitor } from '@/modules/network/NetworkMonitor'
+import { DesktopPet } from '@/modules/pet/DesktopPet'
 import { SettingsPage } from '@/modules/settings/SettingsPage'
 import { PlannedModule } from '@/modules/planned/PlannedModule'
 import { useSettings } from '@/stores/settings'
@@ -20,6 +21,7 @@ const PAGES: Partial<Record<ModuleId, () => React.JSX.Element>> = {
   overview: Overview,
   pc: PcControlCenter,
   network: NetworkMonitor,
+  pet: DesktopPet,
   settings: SettingsPage
 }
 
@@ -32,6 +34,15 @@ export function App(): React.JSX.Element {
     void load()
     startSystemStream()
   }, [load])
+
+  // The main process can ask to open a module (e.g. "Pet settings…" in the pet menu).
+  useEffect(
+    () =>
+      window.bd.app.onNavigate((m) => {
+        if (m in MODULE_MAP) useUi.getState().navigate(m as ModuleId)
+      }),
+    []
+  )
 
   useThemeSync()
   useGlobalShortcuts()
