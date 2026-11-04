@@ -34,7 +34,8 @@
 - [ ] File Manager
 
 ## Phase 5 – Desktop Experience
-- [ ] Desktop Pet (transparent always-on-top window)
+- [x] Desktop Pet (transparent always-on-top click-through window, 3 characters, personalities, drag & drop, focus mode, idle sleep, CPU/RAM warnings, timers)
+- [ ] Desktop Pet: more characters / custom sprite sheets, break reminders
 - [ ] Automation Center (triggers, conditions, actions)
 - [ ] Custom commands in the command palette
 
