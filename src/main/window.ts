@@ -1,4 +1,4 @@
-import { BrowserWindow, nativeTheme, shell } from 'electron'
+import { BrowserWindow, nativeTheme, screen, shell } from 'electron'
 import { join } from 'node:path'
 import type { Settings } from '@shared/settings'
 
@@ -18,9 +18,15 @@ export function resolveTheme(settings: Settings): 'dark' | 'light' {
 export function createMainWindow(settings: Settings, rendererUrl: string | undefined): BrowserWindow {
   const theme = resolveTheme(settings)
 
+  // Fit the window to the current screen (laptops with 125-150 % scaling are small).
+  const area = screen.getPrimaryDisplay().workAreaSize
+  const width = Math.min(1440, Math.round(area.width * 0.9))
+  const height = Math.min(900, Math.round(area.height * 0.9))
+
   const win = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    width,
+    height,
+    center: true,
     minWidth: 960,
     minHeight: 620,
     show: false,
