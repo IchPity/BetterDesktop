@@ -4,6 +4,6 @@ export interface AppInfo {
   electron: string
   chrome: string
   node: string
-  platform: NodeJS.Platform
+  platform: string
   userDataPath: string
 }
