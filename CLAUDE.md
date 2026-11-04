@@ -4,6 +4,7 @@
 - **Jede Änderung wird committet** – egal wie klein (Tippfehler, eine Zeile, Config-Tweak).
 - Lieber viele kleine Commits als ein großer.
 - **Standard-Branch ist `main`.** Die meisten Commits gehen direkt auf `main`.
+- **Nach jedem Commit sofort pushen** (`git push`), damit alles direkt auf GitHub ist – auch Feature-Branches.
 
 ## Wann ein eigener Branch?
 Nur wenn eine Änderung **groß oder riskant** ist, z. B.:
