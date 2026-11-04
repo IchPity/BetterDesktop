@@ -5,8 +5,14 @@ import { IPC } from '@shared/ipc'
 import { registerIpc } from './ipc/register'
 import { setTrustedOrigins } from './ipc/validate'
 import { SettingsStore } from './services/settings-store'
+import { PetController } from './services/pet/controller'
 import { SystemMonitor } from './services/system/monitor'
 import { applyWindowSettings, createMainWindow } from './window'
+
+// Dev only: separate data folder, e.g. for screenshot runs that must not touch real settings.
+if (!app.isPackaged && process.env['BD_USER_DATA_DIR']) {
+  app.setPath('userData', process.env['BD_USER_DATA_DIR'])
+}
 
 // Only one BetterDesktop instance at a time.
 if (!app.requestSingleInstanceLock()) {
@@ -30,10 +36,26 @@ async function bootstrap(): Promise<void> {
 
   const store = new SettingsStore()
   const monitor = new SystemMonitor(store.get().monitoring.intervalMs)
-  registerIpc(store, monitor)
 
   let win = createMainWindow(store.get(), rendererUrl)
-  wireWindow(win, store, monitor)
+
+  const pet = new PetController(store.get(), {
+    rendererUrl,
+    showApp: (module) => {
+      if (win.isDestroyed()) return
+      if (win.isMinimized()) win.restore()
+      win.show()
+      win.focus()
+      if (module) win.webContents.send(IPC.appNavigate, module)
+    },
+    updateSettings: (patch) => store.update(patch),
+    statusTargets: () => (win.isDestroyed() ? [] : [win.webContents])
+  })
+  registerIpc(store, monitor, pet)
+
+  wireWindow(win, store, monitor, pet)
+  // Wait for the app window so the pet never appears before the app.
+  win.once('ready-to-show', () => pet.applySettings(store.get()))
   if (!app.isPackaged && process.env['BD_SCREENSHOT_DIR']) {
     void import('./dev/screenshots').then((m) => m.captureScreens(win, process.env['BD_SCREENSHOT_DIR']!))
   }
@@ -43,14 +65,15 @@ async function bootstrap(): Promise<void> {
     if (app.isPackaged) {
       app.setLoginItemSettings({ openAtLogin: settings.startup.launchAtLogin })
     }
-    for (const w of BrowserWindow.getAllWindows()) {
+    pet.applySettings(settings)
+    for (const w of appWindows(pet)) {
       applyWindowSettings(w, settings)
       w.webContents.send(IPC.settingsChanged, settings)
     }
   })
 
   nativeTheme.on('updated', () => {
-    for (const w of BrowserWindow.getAllWindows()) applyWindowSettings(w, store.get())
+    for (const w of appWindows(pet)) applyWindowSettings(w, store.get())
   })
 
   app.on('second-instance', () => {
@@ -61,13 +84,14 @@ async function bootstrap(): Promise<void> {
   })
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (appWindows(pet).length === 0) {
       win = createMainWindow(store.get(), rendererUrl)
-      wireWindow(win, store, monitor)
+      wireWindow(win, store, monitor, pet)
     }
   })
 
   app.on('window-all-closed', () => {
+    pet.dispose()
     monitor.dispose()
     if (process.platform !== 'darwin') app.quit()
   })
@@ -83,8 +107,17 @@ async function bootstrap(): Promise<void> {
   })
 }
 
-/** Pause monitoring while the window is not visible to save CPU. */
-function wireWindow(win: BrowserWindow, store: SettingsStore, monitor: SystemMonitor): void {
+/** All BrowserWindows except the pet (which has its own look and no zoom). */
+function appWindows(pet: PetController): BrowserWindow[] {
+  return BrowserWindow.getAllWindows().filter((w) => !pet.isPetWindow(w))
+}
+
+/**
+ * Pause monitoring while the window is not visible to save CPU.
+ * Closing the app window also removes the pet, so the app really quits.
+ */
+function wireWindow(win: BrowserWindow, store: SettingsStore, monitor: SystemMonitor, pet: PetController): void {
+  win.on('closed', () => pet.dispose())
   const pause = (): void => {
     if (store.get().monitoring.pauseWhenHidden) monitor.pause()
   }

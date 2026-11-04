@@ -10,7 +10,17 @@ export default defineConfig({
     resolve: { alias: { '@shared': shared } }
   },
   preload: {
-    resolve: { alias: { '@shared': shared } }
+    resolve: { alias: { '@shared': shared } },
+    build: {
+      // Sandboxed preloads cannot load shared chunks – bundle each one fully.
+      isolatedEntries: true,
+      rolldownOptions: {
+        input: {
+          index: resolve(__dirname, 'src/preload/index.ts'),
+          pet: resolve(__dirname, 'src/preload/pet.ts')
+        }
+      }
+    }
   },
   renderer: {
     resolve: {
@@ -19,6 +29,14 @@ export default defineConfig({
         '@shared': shared
       }
     },
-    plugins: [react(), tailwindcss()]
+    plugins: [react(), tailwindcss()],
+    build: {
+      rolldownOptions: {
+        input: {
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          pet: resolve(__dirname, 'src/renderer/pet.html')
+        }
+      }
+    }
   }
 })
