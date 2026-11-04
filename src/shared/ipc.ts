@@ -5,6 +5,8 @@
  */
 export const IPC = {
   appInfo: 'app:info',
+  appOpenDataFolder: 'app:open-data-folder',
+  launchTool: 'system:launch-tool',
 
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',

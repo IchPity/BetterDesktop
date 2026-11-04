@@ -1,7 +1,8 @@
-import { app, type WebContents } from 'electron'
+import { app, shell, type WebContents } from 'electron'
 import { z } from 'zod'
 import { IPC } from '@shared/ipc'
-import type { AppInfo } from '@shared/app'
+import { SYSTEM_TOOLS, type AppInfo, type SystemTool } from '@shared/app'
+import { launchTool } from '../services/tools'
 import { settingsSchema } from '@shared/settings'
 import type { SettingsStore } from '../services/settings-store'
 import { SystemMonitor } from '../services/system/monitor'
@@ -34,6 +35,17 @@ export function registerIpc(store: SettingsStore, monitor: SystemMonitor): void 
     platform: process.platform,
     userDataPath: app.getPath('userData')
   }))
+
+  handle(IPC.appOpenDataFolder, none, async () => {
+    const error = await shell.openPath(app.getPath('userData'))
+    return error ? { ok: false, error } : { ok: true }
+  })
+
+  handle(
+    IPC.launchTool,
+    z.enum(Object.keys(SYSTEM_TOOLS) as [SystemTool, ...SystemTool[]]),
+    (tool) => launchTool(tool)
+  )
 
   // ---- settings ----------------------------------------------------------
   handle(IPC.settingsGet, none, () => store.get())

@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { IPC } from '@shared/ipc'
-import type { AppInfo } from '@shared/app'
+import type { AppInfo, SystemTool } from '@shared/app'
+
+type ActionResult = { ok: boolean; error?: string }
 import type { Settings, SettingsPatch } from '@shared/settings'
 import type { KillResult, ProcessListResult, SystemSnapshot, SystemStatic } from '@shared/system'
 
@@ -12,6 +14,8 @@ import type { KillResult, ProcessListResult, SystemSnapshot, SystemStatic } from
 const api = {
   app: {
     info: (): Promise<AppInfo> => ipcRenderer.invoke(IPC.appInfo),
+    openDataFolder: (): Promise<ActionResult> => ipcRenderer.invoke(IPC.appOpenDataFolder),
+    launchTool: (tool: SystemTool): Promise<ActionResult> => ipcRenderer.invoke(IPC.launchTool, tool),
     platform: process.platform
   },
   settings: {
