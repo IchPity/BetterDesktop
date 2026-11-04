@@ -325,7 +325,7 @@ export function CommandPalette(): React.JSX.Element {
                 <Kbd>↵</Kbd> run
               </span>
               <span className="ml-auto flex items-center gap-1">
-                {results.length} commands <ArrowRight className="h-3 w-3" />
+                {results.length} {results.length === 1 ? 'command' : 'commands'} <ArrowRight className="h-3 w-3" />
               </span>
             </div>
           </motion.div>

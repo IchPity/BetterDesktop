@@ -13,6 +13,7 @@ if (import.meta.env.DEV) {
   w.__bdSys = () => useSystem.getState()
   w.__bdNav = (m: ModuleId, sub?: string) => useUi.getState().navigate(m, sub ?? null)
   w.__bdPalette = (open: boolean) => useUi.getState().setPaletteOpen(open)
+  w.__bdUi = () => useUi
   w.__bdTheme = (theme: 'dark' | 'light') => useSettings.getState().update({ appearance: { theme } })
 }
 
