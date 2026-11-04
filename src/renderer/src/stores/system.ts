@@ -60,7 +60,7 @@ export function startSystemStream(): void {
     useSystem.setState((st) => {
       const max = st.historyLength
       const h = st.history
-      const gpuUtil = snap.gpus?.find((g) => g.utilization !== null)?.utilization ?? null
+      const gpuUtil = snap.gpu?.load ?? null
       const cores = snap.cpu.cores.map((load, i) => push(h.cores[i] ?? [], load, max))
 
       const session = { ...st.session }
@@ -70,7 +70,10 @@ export function startSystemStream(): void {
       let log = st.connectionLog
       const prev = st.snapshot?.network
       const state = snap.network.operstate ?? 'unknown'
-      if (!prev || prev.operstate !== snap.network.operstate || prev.iface !== snap.network.iface) {
+      if (
+        snap.network.operstate !== null &&
+        (!prev || prev.operstate !== snap.network.operstate || prev.iface !== snap.network.iface)
+      ) {
         log = [{ at: snap.timestamp, state, iface: snap.network.ifaceName ?? snap.network.iface }, ...log].slice(0, 50)
       }
 

@@ -34,6 +34,9 @@ async function bootstrap(): Promise<void> {
 
   let win = createMainWindow(store.get(), rendererUrl)
   wireWindow(win, store, monitor)
+  if (!app.isPackaged && process.env['BD_SCREENSHOT_DIR']) {
+    void import('./dev/screenshots').then((m) => m.captureScreens(win, process.env['BD_SCREENSHOT_DIR']!))
+  }
 
   store.on('change', (settings) => {
     monitor.setIntervalMs(settings.monitoring.intervalMs)

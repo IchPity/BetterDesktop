@@ -95,7 +95,7 @@ export function CpuWidget(): React.JSX.Element {
                 sub={`${st?.cpu.physicalCores ?? '–'} cores · ${st?.cpu.logicalCores ?? '–'} threads`}
               />
               <div className="flex gap-5">
-                <Metric label="Clock" value={snap.cpu.speedGHz !== null ? `${snap.cpu.speedGHz.toFixed(2)} GHz` : '—'} />
+                <Metric label="Base clock" value={snap.cpu.speedGHz !== null ? `${snap.cpu.speedGHz.toFixed(2)} GHz` : '—'} />
                 <Metric
                   label="Temp"
                   value={
@@ -164,66 +164,40 @@ export function MemoryWidget(): React.JSX.Element {
 /* ------------------------------------------------------------------ GPU */
 
 export function GpuWidget(): React.JSX.Element {
-  const snap = useSystem((s) => s.snapshot)
+  const gpu = useSystem((s) => s.snapshot?.gpu)
   const st = useSystem((s) => s.static)
   const hist = useSystem((s) => s.history.gpu)
   const cap = useSystem((s) => s.historyLength)
-  const gpus = snap?.gpus
-  const primary =
-    gpus?.find((g) => g.utilization !== null) ??
-    gpus?.find((g) => !/basic|virtual|parsec|remote/i.test(g.model)) ??
-    gpus?.[0]
+  const adapters = st?.gpus ?? []
+  const totalVram = adapters.reduce((sum, g) => sum + (g.vram ?? 0), 0)
+  const names = adapters.map((g) => g.model).join(' · ')
 
   return (
     <Card className="h-full">
-      <CardHeader icon={<Monitor />} title="GPU" subtitle={primary?.model ?? st?.gpus[0]?.model ?? 'Detecting…'} />
+      <CardHeader icon={<Monitor />} title="GPU" subtitle={names || 'Detecting…'} />
       <CardBody>
-        {gpus === null || gpus === undefined ? (
+        {gpu === null || gpu === undefined ? (
           <Loading />
-        ) : !primary ? (
-          <EmptyState title="No GPU detected" description="Windows did not report a graphics adapter." />
         ) : (
           <>
             <div className="flex items-end justify-between gap-4">
-              {primary.utilization !== null ? (
-                <BigValue value={primary.utilization.toFixed(0)} unit="%" sub="Utilization" />
+              {gpu.load !== null ? (
+                <BigValue value={gpu.load.toFixed(0)} unit="%" sub="Busiest adapter" />
               ) : (
                 <div>
                   <div className="text-xs text-muted">Utilization</div>
                   <Unavailable
                     className="mt-1"
-                    reason="Live GPU utilization is read through nvidia-smi. It is not available for this adapter/driver."
+                    reason="Windows did not provide GPU performance counters (requires WDDM 2.4+ drivers)."
                   />
                 </div>
               )}
               <div className="flex gap-5">
-                <Metric
-                  label="VRAM"
-                  value={
-                    primary.vramUsedMB !== null && primary.vramTotalMB !== null
-                      ? `${formatBytes(primary.vramUsedMB * 1048576)} / ${formatBytes(primary.vramTotalMB * 1048576)}`
-                      : primary.vramTotalMB !== null
-                        ? formatBytes(primary.vramTotalMB * 1048576)
-                        : '—'
-                  }
-                />
-                <Metric label="Temp" value={primary.temperatureC !== null ? `${primary.temperatureC} °C` : '—'} />
+                <Metric label="Dedicated VRAM in use" value={formatBytes(gpu.dedicatedUsed)} />
+                <Metric label="Installed" value={totalVram > 0 ? formatBytes(totalVram) : '—'} />
               </div>
             </div>
-            {primary.utilization !== null ? (
-              <AreaChart className="mt-3" series={[{ data: hist, color: 'var(--success)' }]} max={100} capacity={cap} height={84} />
-            ) : (
-              <div className="mt-4 space-y-2">
-                {gpus.map((g, i) => (
-                  <div key={i} className="flex items-center justify-between rounded-lg border border-border bg-surface-2 px-3 py-2">
-                    <span className="truncate text-xs">{g.model}</span>
-                    <span className="tabular text-xs text-muted">
-                      {g.vramTotalMB !== null ? formatBytes(g.vramTotalMB * 1048576) : '—'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <AreaChart className="mt-3" series={[{ data: hist, color: 'var(--success)' }]} max={100} capacity={cap} height={84} />
           </>
         )}
       </CardBody>

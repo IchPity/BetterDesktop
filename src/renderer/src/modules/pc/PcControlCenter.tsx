@@ -4,8 +4,8 @@ import type { ReactNode } from 'react'
 import { Page, PageHeader } from '@/components/layout/Page'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { AreaChart, Bar, CoreGrid, Ring } from '@/components/ui/charts'
-import { Badge, EmptyState, Segmented, Skeleton, Unavailable } from '@/components/ui/controls'
-import { formatBits, formatBytes, formatPercent } from '@/lib/format'
+import { Segmented, Skeleton, Unavailable } from '@/components/ui/controls'
+import { formatBits, formatBytes, formatPercent, formatRate } from '@/lib/format'
 import { useSystem } from '@/stores/system'
 import { useUi } from '@/stores/ui'
 import { ProcessManager } from './ProcessManager'
@@ -90,8 +90,8 @@ function Hardware(): React.JSX.Element {
               <span className="text-[10px] text-faint">load</span>
             </Ring>
             <div className="grid flex-1 grid-cols-2 gap-2 lg:grid-cols-4">
-              <Stat label="Current clock" value={snap.cpu.speedGHz !== null ? `${snap.cpu.speedGHz.toFixed(2)} GHz` : '—'} />
-              <Stat label="Base / max" value={st ? `${st.cpu.baseSpeedGHz ?? '—'} / ${st.cpu.maxSpeedGHz ?? '—'} GHz` : '—'} />
+              <Stat label="Base clock" value={snap.cpu.speedGHz !== null ? `${snap.cpu.speedGHz.toFixed(2)} GHz` : '—'} />
+              <Stat label="Max clock" value={st?.cpu.maxSpeedGHz ? `${st.cpu.maxSpeedGHz} GHz` : '—'} />
               <Stat label="Cores / threads" value={st ? `${st.cpu.physicalCores} / ${st.cpu.logicalCores}` : '—'} />
               <Stat
                 label="Temperature"
@@ -142,47 +142,33 @@ function Hardware(): React.JSX.Element {
       <Card className="col-span-12 xl:col-span-6">
         <CardHeader icon={<Monitor />} title="Graphics" subtitle={`${st?.gpus.length ?? 0} adapter(s)`} />
         <CardBody>
-          {snap.gpus === null ? (
+          {snap.gpu === null ? (
             <Skeleton className="h-40" />
-          ) : snap.gpus.length === 0 ? (
-            <EmptyState title="No graphics adapter reported" />
           ) : (
             <div className="space-y-3">
-              {snap.gpus.map((g, i) => (
-                <div key={i} className="rounded-lg border border-border bg-surface-2 p-3">
-                  <div className="mb-2.5 flex items-center justify-between gap-2">
-                    <span className="truncate text-[13px] font-medium">{g.model}</span>
-                    {g.utilization === null && <Badge>Utilization not exposed</Badge>}
+              <div className="grid grid-cols-3 gap-2">
+                <Stat label="Load (busiest adapter)" value={formatPercent(snap.gpu.load)} />
+                <Stat label="Dedicated VRAM in use" value={formatBytes(snap.gpu.dedicatedUsed)} />
+                <Stat
+                  label="Temperature"
+                  value={
+                    <Unavailable reason="GPU temperature is only exposed through vendor tools (e.g. nvidia-smi). Polling them keeps a sleeping laptop GPU awake, so BetterDesktop does not do it." />
+                  }
+                />
+              </div>
+              <AreaChart series={[{ data: h.gpu, color: 'var(--success)' }]} max={100} capacity={cap} height={90} />
+              {(st?.gpus ?? []).map((g, i) => (
+                <div key={i} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-[13px] font-medium">{g.model}</div>
+                    <div className="truncate text-[11px] text-faint">{g.vendor}</div>
                   </div>
-                  <div className="grid grid-cols-4 gap-2 text-xs">
-                    <div>
-                      <div className="text-faint">Load</div>
-                      <div className="tabular">{formatPercent(g.utilization)}</div>
-                    </div>
-                    <div>
-                      <div className="text-faint">VRAM</div>
-                      <div className="tabular">
-                        {g.vramUsedMB !== null ? `${formatBytes(g.vramUsedMB * 1048576)} / ` : ''}
-                        {g.vramTotalMB !== null ? formatBytes(g.vramTotalMB * 1048576) : '—'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-faint">Temp</div>
-                      <div className="tabular">{g.temperatureC !== null ? `${g.temperatureC} °C` : '—'}</div>
-                    </div>
-                    <div>
-                      <div className="text-faint">Core clock</div>
-                      <div className="tabular">{g.clockCoreMHz !== null ? `${g.clockCoreMHz} MHz` : '—'}</div>
-                    </div>
-                  </div>
-                  {g.utilization !== null && <Bar className="mt-2.5" value={g.utilization} color="var(--success)" />}
+                  <span className="tabular shrink-0 text-xs text-muted">{g.vram ? `${formatBytes(g.vram)} VRAM` : 'Shared memory'}</span>
                 </div>
               ))}
-              {h.gpu.length > 1 && (
-                <AreaChart series={[{ data: h.gpu, color: 'var(--success)' }]} max={100} capacity={cap} height={80} />
-              )}
               <p className="text-[11px] text-faint">
-                Live load, temperature and clock are read via nvidia-smi (NVIDIA drivers). Other vendors only report model and VRAM.
+                Load and memory come from Windows GPU performance counters – the same source Task Manager uses – and work for
+                every vendor.
               </p>
             </div>
           )}
@@ -191,36 +177,38 @@ function Hardware(): React.JSX.Element {
 
       {/* Storage */}
       <Card className="col-span-12 xl:col-span-6">
-        <CardHeader icon={<HardDrive />} title="Storage" subtitle="Refreshed every 30 seconds" />
+        <CardHeader icon={<HardDrive />} title="Storage" subtitle="Volumes refresh every 30 seconds" />
         <CardBody>
           {snap.disks === null ? (
             <Skeleton className="h-40" />
           ) : (
             <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                <Stat label="Read" value={snap.diskIo ? formatRate(snap.diskIo.readPerSec) : '—'} />
+                <Stat label="Write" value={snap.diskIo ? formatRate(snap.diskIo.writePerSec) : '—'} />
+                <Stat label="Active time" value={snap.diskIo ? formatPercent(snap.diskIo.busyPercent) : '—'} />
+              </div>
               {snap.disks.map((d) => (
                 <div key={d.mount} className="rounded-lg border border-border bg-surface-2 p-3">
                   <div className="mb-2 flex items-center justify-between text-xs">
                     <span className="text-[13px] font-medium">
-                      {d.mount} <span className="ml-1 text-xs text-faint">{d.type}</span>
+                      {d.label ? `${d.label} (${d.mount})` : d.mount}{' '}
+                      <span className="ml-1 text-xs text-faint">{d.type}</span>
                     </span>
                     <span className="tabular text-muted">{d.usePercent.toFixed(0)}%</span>
                   </div>
                   <Bar value={d.usePercent} />
                   <div className="tabular mt-2 flex justify-between text-[11px] text-muted">
                     <span>{formatBytes(d.used)} used</span>
-                    <span>{formatBytes(d.available)} free · {formatBytes(d.size)}</span>
+                    <span>
+                      {formatBytes(d.available)} free · {formatBytes(d.size)}
+                    </span>
                   </div>
                 </div>
               ))}
               <div className="flex items-center justify-between rounded-lg border border-dashed border-border-strong px-3 py-2 text-xs text-muted">
-                <span>Disk activity & drive health (S.M.A.R.T.)</span>
-                {snap.diskIo ? (
-                  <span className="tabular">
-                    R {snap.diskIo.readPerSec?.toFixed(0) ?? '—'} · W {snap.diskIo.writePerSec?.toFixed(0) ?? '—'} IO/s
-                  </span>
-                ) : (
-                  <Unavailable reason="Windows does not expose per-disk I/O counters or S.M.A.R.T. data without administrator rights. Planned via a privileged helper." />
-                )}
+                <span>Drive health (S.M.A.R.T.)</span>
+                <Unavailable reason="Reading S.M.A.R.T. data on Windows requires administrator rights. Planned via an optional elevated helper." />
               </div>
             </div>
           )}

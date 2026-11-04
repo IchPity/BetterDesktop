@@ -6,7 +6,7 @@ import { launchTool } from '../services/tools'
 import { settingsSchema } from '@shared/settings'
 import type { SettingsStore } from '../services/settings-store'
 import { SystemMonitor } from '../services/system/monitor'
-import { killProcess, listProcesses } from '../services/system/processes'
+import { ProcessService } from '../services/system/processes'
 import { handle } from './validate'
 
 const none = z.undefined()
@@ -53,7 +53,7 @@ export function registerIpc(store: SettingsStore, monitor: SystemMonitor): void 
   handle(IPC.settingsReset, none, () => store.reset())
 
   // ---- system monitoring -------------------------------------------------
-  handle(IPC.systemStatic, none, () => SystemMonitor.getStatic())
+  handle(IPC.systemStatic, none, () => monitor.getStatic())
 
   const subscriptions = new Map<number, () => void>()
   const unsubscribe = (wc: WebContents): void => {
@@ -74,10 +74,11 @@ export function registerIpc(store: SettingsStore, monitor: SystemMonitor): void 
   handle(IPC.systemStop, none, (_p, event) => unsubscribe(event.sender))
 
   // ---- processes ---------------------------------------------------------
-  handle(IPC.processesList, none, () => listProcesses())
+  const processes = new ProcessService(monitor.provider)
+  handle(IPC.processesList, none, () => processes.list())
   handle(
     IPC.processKill,
     z.object({ pid: z.number().int().positive().max(2 ** 31), name: z.string().min(1).max(260) }).strict(),
-    ({ pid, name }) => killProcess(pid, name)
+    ({ pid, name }) => processes.kill(pid, name)
   )
 }

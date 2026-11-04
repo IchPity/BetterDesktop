@@ -16,7 +16,8 @@ export interface CpuStatic {
 export interface GpuStatic {
   model: string
   vendor: string
-  vramMB: number | null
+  /** Dedicated video memory in bytes. */
+  vram: number | null
 }
 
 export interface OsStatic {
@@ -49,13 +50,19 @@ export interface MemLive {
   swapUsed: number
 }
 
+export interface GpuAdapterLive {
+  /** Adapter LUID as reported by Windows performance counters. */
+  id: string
+  load: number | null
+  dedicatedUsed: number | null
+}
+
 export interface GpuLive {
-  model: string
-  utilization: number | null
-  temperatureC: number | null
-  vramUsedMB: number | null
-  vramTotalMB: number | null
-  clockCoreMHz: number | null
+  /** Load of the busiest adapter (max over engine types) – same method as Task Manager. */
+  load: number | null
+  /** Dedicated video memory in use across all adapters, in bytes. */
+  dedicatedUsed: number | null
+  adapters: GpuAdapterLive[]
 }
 
 export interface NetworkLive {
@@ -73,6 +80,7 @@ export interface NetworkLive {
 }
 
 export interface DiskLive {
+  label: string | null
   fs: string
   mount: string
   type: string
@@ -83,15 +91,18 @@ export interface DiskLive {
 }
 
 export interface DiskIoLive {
+  /** Bytes per second across all physical disks. */
   readPerSec: number | null
   writePerSec: number | null
+  /** Percentage of time the disks were busy. */
+  busyPercent: number | null
 }
 
 export interface SystemSnapshot {
   timestamp: number
   cpu: CpuLive
   mem: MemLive
-  gpus: GpuLive[] | null
+  gpu: GpuLive | null
   network: NetworkLive
   disks: DiskLive[] | null
   diskIo: DiskIoLive | null
@@ -99,20 +110,21 @@ export interface SystemSnapshot {
 
 export interface ProcessInfo {
   pid: number
-  parentPid: number
   name: string
+  /** CPU usage in percent of the whole machine since the previous sample. */
   cpu: number
+  /** Working set in bytes. */
   memRss: number
   memPercent: number
-  user: string | null
   path: string | null
   started: string | null
+  /** Critical OS process – BetterDesktop refuses to terminate it. */
+  protected: boolean
 }
 
 export interface ProcessListResult {
   processes: ProcessInfo[]
   total: number
-  running: number
   timestamp: number
 }
 

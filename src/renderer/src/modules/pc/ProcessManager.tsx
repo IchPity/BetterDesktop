@@ -11,26 +11,6 @@ import { toast } from '@/stores/ui'
 
 type SortKey = 'name' | 'pid' | 'cpu' | 'memRss'
 
-/** Names the main process will refuse to kill – shown as protected in the UI. */
-const PROTECTED = new Set([
-  'system',
-  'system idle process',
-  'idle',
-  'registry',
-  'secure system',
-  'memory compression',
-  'smss.exe',
-  'csrss.exe',
-  'wininit.exe',
-  'winlogon.exe',
-  'services.exe',
-  'lsass.exe',
-  'lsaiso.exe',
-  'svchost.exe',
-  'dwm.exe',
-  'fontdrvhost.exe'
-])
-
 export function ProcessManager(): React.JSX.Element {
   const [auto, setAuto] = useState(true)
   const { data, error, loading, refresh } = useProcesses(3000, auto)
@@ -128,7 +108,7 @@ export function ProcessManager(): React.JSX.Element {
             size="sm"
             variant="danger"
             icon={<Skull className="h-3.5 w-3.5" />}
-            disabled={!selectedProc || PROTECTED.has(selectedProc.name.toLowerCase())}
+            disabled={!selectedProc || selectedProc.protected}
             onClick={() => selectedProc && setTarget(selectedProc)}
           >
             End task
@@ -155,12 +135,12 @@ export function ProcessManager(): React.JSX.Element {
                 <Th label="PID" k="pid" sort={sort} onSort={toggleSort} right className="w-20" />
                 <Th label="CPU" k="cpu" sort={sort} onSort={toggleSort} right className="w-36" />
                 <Th label="Memory" k="memRss" sort={sort} onSort={toggleSort} right className="w-36" />
-                <th className="w-28 border-b border-border px-4 py-2 font-normal">User</th>
+                <th className="w-28 border-b border-border px-4 py-2 text-right font-normal">Started</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((p) => {
-                const isProtected = PROTECTED.has(p.name.toLowerCase())
+                const isProtected = p.protected
                 return (
                   <tr
                     key={p.pid}
@@ -189,7 +169,9 @@ export function ProcessManager(): React.JSX.Element {
                       </div>
                     </td>
                     <td className="tabular border-b border-border px-4 py-1.5 text-right">{formatBytes(p.memRss)}</td>
-                    <td className="max-w-0 truncate border-b border-border px-4 py-1.5 text-muted">{p.user ?? '—'}</td>
+                    <td className="tabular border-b border-border px-4 py-1.5 text-right text-muted">
+                      {p.started ? new Date(p.started).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
+                    </td>
                   </tr>
                 )
               })}

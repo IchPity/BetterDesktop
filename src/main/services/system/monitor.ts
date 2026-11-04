@@ -1,92 +1,73 @@
-import si from 'systeminformation'
-import type {
-  DiskIoLive,
-  DiskLive,
-  GpuLive,
-  NetworkLive,
-  SystemSnapshot,
-  SystemStatic
-} from '@shared/system'
-
-/** Converts "unknown" values from systeminformation (-1, NaN, undefined) to null. */
-function num(v: unknown): number | null {
-  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null
-}
+import os from 'node:os'
+import type { DiskIoLive, DiskLive, GpuLive, NetworkLive, SystemSnapshot, SystemStatic } from '@shared/system'
+import { createProvider, type MetricsProvider, type NetCounters } from './providers'
 
 function round(v: number, digits = 1): number {
   const f = 10 ** digits
   return Math.round(v * f) / f
 }
 
-type NetBase = Pick<NetworkLive, 'iface' | 'ifaceName' | 'type' | 'ip4' | 'mac' | 'speedMbit'>
+const EMPTY_NET: NetworkLive = {
+  iface: null,
+  ifaceName: null,
+  type: null,
+  ip4: null,
+  mac: null,
+  operstate: null,
+  speedMbit: null,
+  rxPerSec: null,
+  txPerSec: null,
+  rxTotal: null,
+  txTotal: null
+}
 
 /**
- * Collects real system metrics. Expensive probes run on slower tiers so the
- * fast tick (CPU / RAM / network) stays cheap:
- *   fast   – every tick            (currentLoad, mem, networkStats, speed)
- *   medium – every ~5s             (GPU via WMI / nvidia-smi)
- *   slow   – every ~30s            (filesystem sizes, default interface)
- *   temp   – probed once on Windows (needs admin/WMI on most machines)
+ * Collects real system metrics.
+ *
+ * The live tick only uses instant Node APIs (os.cpus / os.totalmem /
+ * os.freemem) and never spawns processes. Everything else comes from the
+ * platform provider and runs in the background, feeding caches:
+ *   sample (network, GPU, disk I/O) – every tick, one request at a time
+ *   swap                            – every 10s
+ *   drives                          – every 30s
+ *
+ * On Windows the provider talks to ONE persistent PowerShell helper that reads
+ * .NET performance counters (see win-helper.ps1). Nothing runs while no window
+ * is subscribed.
  */
 export class SystemMonitor {
-  private static staticInfo: Promise<SystemStatic> | null = null
+  readonly provider: MetricsProvider = createProvider()
+  private staticInfo: Promise<SystemStatic> | null = null
 
   private timer: NodeJS.Timeout | null = null
   private intervalMs: number
   private running = false
   private paused = false
-  private busy = false
   private listeners = new Set<(s: SystemSnapshot) => void>()
 
-  private gpuCache: GpuLive[] | null = null
-  private gpuAt = 0
-  private diskCache: DiskLive[] | null = null
-  private diskAt = 0
-  private tempCache: number | null = null
-  private tempAt = 0
-  private tempSupported = true
-  private netBase: NetBase | null = null
-  private netBaseAt = 0
-  private diskIoSupported = process.platform !== 'win32'
+  private prevCpuTimes: Array<{ idle: number; total: number }> | null = null
+
+  private sampleBusy = false
+  private net: NetworkLive = EMPTY_NET
+  private prevNet: { at: number; rx: number; tx: number; iface: string | null } | null = null
+  private gpu: GpuLive | null = null
+  private diskIo: DiskIoLive | null = null
+  private sampleFailed = false
+
+  private drives: DiskLive[] | null = null
+  private drivesAt = 0
+  private swap: { total: number; used: number } | null = null
+  private swapAt = 0
 
   constructor(intervalMs: number) {
     this.intervalMs = intervalMs
+    this.cpuLoad() // prime CPU counters so the first sample is meaningful
   }
 
-  static getStatic(): Promise<SystemStatic> {
+  getStatic(): Promise<SystemStatic> {
     if (!this.staticInfo) {
-      this.staticInfo = (async (): Promise<SystemStatic> => {
-        const [cpu, mem, os, graphics] = await Promise.all([
-          si.cpu(),
-          si.mem(),
-          si.osInfo(),
-          si.graphics().catch(() => null)
-        ])
-        return {
-          cpu: {
-            manufacturer: cpu.manufacturer,
-            brand: cpu.brand,
-            physicalCores: cpu.physicalCores,
-            logicalCores: cpu.cores,
-            baseSpeedGHz: num(cpu.speed),
-            maxSpeedGHz: num(cpu.speedMax)
-          },
-          gpus: (graphics?.controllers ?? []).map((c) => ({
-            model: c.model || 'Unknown GPU',
-            vendor: c.vendor || '',
-            vramMB: num(c.vram)
-          })),
-          memTotal: mem.total,
-          os: {
-            platform: os.platform,
-            distro: os.distro,
-            release: os.release,
-            arch: os.arch,
-            hostname: os.hostname
-          }
-        }
-      })().catch((err) => {
-        SystemMonitor.staticInfo = null
+      this.staticInfo = this.provider.static().catch((err) => {
+        this.staticInfo = null
         throw err
       })
     }
@@ -125,12 +106,13 @@ export class SystemMonitor {
   dispose(): void {
     this.listeners.clear()
     this.halt()
+    this.provider.dispose()
   }
 
   private ensureRunning(): void {
     if (this.running || this.paused || this.listeners.size === 0) return
     this.running = true
-    void this.tick()
+    this.tick()
   }
 
   private halt(): void {
@@ -139,165 +121,125 @@ export class SystemMonitor {
     this.timer = null
   }
 
-  private async tick(): Promise<void> {
-    if (!this.running || this.busy) return
-    this.busy = true
-    const started = Date.now()
+  private tick(): void {
+    if (!this.running) return
     try {
-      const snapshot = await this.collect()
-      if (this.running) for (const fn of this.listeners) fn(snapshot)
+      this.refreshBackground()
+      const snapshot = this.collect()
+      for (const fn of this.listeners) fn(snapshot)
     } catch (err) {
       console.error('[monitor] collect failed', err)
-    } finally {
-      this.busy = false
-      if (this.running) {
-        const elapsed = Date.now() - started
-        this.timer = setTimeout(() => void this.tick(), Math.max(250, this.intervalMs - elapsed))
-      }
     }
+    this.timer = setTimeout(() => this.tick(), this.intervalMs)
   }
 
-  private async collect(): Promise<SystemSnapshot> {
-    const now = Date.now()
+  /** CPU load from os.cpus() time deltas – instant and process-free. */
+  private cpuLoad(): { total: number; cores: number[] } {
+    const times = os.cpus().map((c) => {
+      const t = c.times
+      return { idle: t.idle, total: t.user + t.nice + t.sys + t.idle + t.irq }
+    })
+    const prev = this.prevCpuTimes
+    this.prevCpuTimes = times
+    if (!prev || prev.length !== times.length) return { total: 0, cores: times.map(() => 0) }
+    let idleSum = 0
+    let totalSum = 0
+    const pct = (idle: number, total: number): number =>
+      total > 0 ? round(Math.max(0, Math.min(100, (1 - idle / total) * 100))) : 0
+    const cores = times.map((t, i) => {
+      const idle = t.idle - prev[i].idle
+      const total = t.total - prev[i].total
+      idleSum += idle
+      totalSum += total
+      return pct(idle, total)
+    })
+    return { total: pct(idleSum, totalSum), cores }
+  }
 
-    // Slower tiers refresh their caches in the background.
-    if (now - this.gpuAt > 5_000) {
-      this.gpuAt = now
-      void this.collectGpu()
-    }
-    if (now - this.diskAt > 30_000) {
-      this.diskAt = now
-      void this.collectDisks()
-    }
-    if (this.tempSupported && now - this.tempAt > 5_000) {
-      this.tempAt = now
-      void this.collectTemperature()
-    }
-
-    const [load, mem, speed, network, diskIo] = await Promise.all([
-      si.currentLoad(),
-      si.mem(),
-      si.cpuCurrentSpeed().catch(() => null),
-      this.collectNetwork(now),
-      this.collectDiskIo()
-    ])
-
+  private collect(): SystemSnapshot {
+    const load = this.cpuLoad()
+    const total = os.totalmem()
+    const free = os.freemem()
+    const speedMHz = os.cpus()[0]?.speed ?? 0
     return {
-      timestamp: now,
+      timestamp: Date.now(),
       cpu: {
-        load: round(load.currentLoad),
-        cores: load.cpus.map((c) => round(c.load)),
-        speedGHz: speed ? num(speed.avg) : null,
-        temperatureC: this.tempCache
+        load: load.total,
+        cores: load.cores,
+        // Node reports the nominal clock on Windows; live boost clocks need a driver.
+        speedGHz: speedMHz > 0 ? round(speedMHz / 1000, 2) : null,
+        // CPU temperature is not exposed to non-admin apps on Windows.
+        temperatureC: null
       },
       mem: {
-        total: mem.total,
-        used: mem.active,
-        available: mem.available,
-        swapTotal: mem.swaptotal,
-        swapUsed: mem.swapused
+        total,
+        used: total - free,
+        available: free,
+        swapTotal: this.swap?.total ?? 0,
+        swapUsed: this.swap?.used ?? 0
       },
-      gpus: this.gpuCache,
-      network,
-      disks: this.diskCache,
-      diskIo
+      gpu: this.sampleFailed ? { load: null, dedicatedUsed: null, adapters: [] } : this.gpu,
+      network: this.net,
+      disks: this.drives,
+      diskIo: this.diskIo
     }
   }
 
-  private async collectNetwork(now: number): Promise<NetworkLive> {
-    if (!this.netBase || now - this.netBaseAt > 30_000) {
-      this.netBaseAt = now
-      try {
-        const name = await si.networkInterfaceDefault()
-        const ifaces = await si.networkInterfaces()
-        const list = Array.isArray(ifaces) ? ifaces : [ifaces]
-        const iface = list.find((i) => i.iface === name) ?? list.find((i) => i.default) ?? null
-        this.netBase = {
-          iface: iface?.iface ?? (name || null),
-          ifaceName: iface?.ifaceName || null,
-          type: iface?.type || null,
-          ip4: iface?.ip4 || null,
-          mac: iface?.mac || null,
-          speedMbit: num(iface?.speed)
-        }
-      } catch {
-        this.netBase = { iface: null, ifaceName: null, type: null, ip4: null, mac: null, speedMbit: null }
+  private refreshBackground(): void {
+    const now = Date.now()
+    if (!this.sampleBusy) {
+      this.sampleBusy = true
+      this.provider
+        .sample()
+        .then((s) => {
+          this.sampleFailed = false
+          this.gpu = s.gpu
+          this.diskIo = s.diskIo
+          this.net = this.withRates(s.network)
+        })
+        .catch((err: Error) => {
+          this.sampleFailed = true
+          console.warn('[monitor] sample failed:', err.message)
+        })
+        .finally(() => {
+          this.sampleBusy = false
+        })
+    }
+    if (now - this.drivesAt > 30_000) {
+      this.drivesAt = now
+      this.provider
+        .drives()
+        .then((d) => (this.drives = d))
+        .catch(() => (this.drives = this.drives ?? []))
+    }
+    if (now - this.swapAt > 10_000) {
+      this.swapAt = now
+      this.provider
+        .swap()
+        .then((s) => (this.swap = s))
+        .catch(() => undefined)
+    }
+  }
+
+  private withRates(c: NetCounters | null): NetworkLive {
+    if (!c) return { ...EMPTY_NET, operstate: 'down' }
+    const now = Date.now()
+    let rxPerSec: number | null = null
+    let txPerSec: number | null = null
+    const p = this.prevNet
+    if (p && p.iface === c.iface && c.rxTotal !== null && c.txTotal !== null) {
+      const dt = (now - p.at) / 1000
+      if (dt > 0.2) {
+        rxPerSec = Math.max(0, (c.rxTotal - p.rx) / dt)
+        txPerSec = Math.max(0, (c.txTotal - p.tx) / dt)
+      } else {
+        rxPerSec = this.net.rxPerSec
+        txPerSec = this.net.txPerSec
       }
     }
-    const base = this.netBase
-    try {
-      const stats = await si.networkStats(base.iface ?? undefined)
-      const s = stats[0]
-      return {
-        ...base,
-        operstate: s?.operstate ?? null,
-        rxPerSec: num(s?.rx_sec),
-        txPerSec: num(s?.tx_sec),
-        rxTotal: num(s?.rx_bytes),
-        txTotal: num(s?.tx_bytes)
-      }
-    } catch {
-      return { ...base, operstate: null, rxPerSec: null, txPerSec: null, rxTotal: null, txTotal: null }
+    if (c.rxTotal !== null && c.txTotal !== null && (!p || (now - p.at) / 1000 > 0.2 || p.iface !== c.iface)) {
+      this.prevNet = { at: now, rx: c.rxTotal, tx: c.txTotal, iface: c.iface }
     }
-  }
-
-  private async collectGpu(): Promise<void> {
-    try {
-      const g = await si.graphics()
-      this.gpuCache = g.controllers.map((c) => ({
-        model: c.model || 'Unknown GPU',
-        utilization: num(c.utilizationGpu),
-        temperatureC: num(c.temperatureGpu),
-        vramUsedMB: num(c.memoryUsed),
-        vramTotalMB: num(c.memoryTotal) ?? num(c.vram),
-        clockCoreMHz: num(c.clockCore)
-      }))
-    } catch {
-      this.gpuCache = []
-    }
-  }
-
-  private async collectDisks(): Promise<void> {
-    try {
-      const list = await si.fsSize()
-      this.diskCache = list
-        .filter((d) => d.size > 0)
-        .map((d) => ({
-          fs: d.fs,
-          mount: d.mount,
-          type: d.type,
-          size: d.size,
-          used: d.used,
-          available: d.available,
-          usePercent: round(d.use)
-        }))
-    } catch {
-      this.diskCache = []
-    }
-  }
-
-  private async collectTemperature(): Promise<void> {
-    try {
-      const t = await si.cpuTemperature()
-      const main = num(t.main)
-      this.tempCache = main !== null && main > 0 ? round(main) : null
-    } catch {
-      this.tempCache = null
-    }
-    // Windows only exposes CPU temperature through WMI with admin rights on
-    // most machines. If the first probe fails, stop asking.
-    if (this.tempCache === null) this.tempSupported = false
-  }
-
-  private async collectDiskIo(): Promise<DiskIoLive | null> {
-    if (!this.diskIoSupported) return null
-    try {
-      const io = await si.disksIO()
-      if (!io) return null
-      return { readPerSec: num(io.rIO_sec), writePerSec: num(io.wIO_sec) }
-    } catch {
-      this.diskIoSupported = false
-      return null
-    }
+    return { ...c, rxPerSec, txPerSec }
   }
 }
