@@ -1,0 +1,17 @@
+{
+  "name": "betterdesktop",
+  "productName": "BetterDesktop",
+  "version": "0.1.0",
+  "description": "One App. Your Entire PC.",
+  "author": "Peter",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "dist": "npm run build && electron-builder --win"
+  }
+}
