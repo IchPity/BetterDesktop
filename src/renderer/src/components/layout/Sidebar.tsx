@@ -103,7 +103,7 @@ function NavItem({
             <span className="relative h-1.5 w-1.5 shrink-0 rounded-full bg-border-strong" title="Planned" />
           )}
           {m.shortcut && (
-            <Kbd className="relative opacity-0 transition-opacity group-hover:opacity-100">^{m.shortcut}</Kbd>
+            <Kbd className="relative hidden group-hover:inline-flex">^{m.shortcut}</Kbd>
           )}
         </>
       )}
