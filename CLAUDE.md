@@ -50,3 +50,19 @@ Beispiele:
 - Kein `git push --force` auf `main`.
 - Keine Passwörter, API-Keys, `.env`-Dateien committen.
 - Keine riesigen Binärdateien (Videos, Builds) ins Repo – dafür `.gitignore`.
+
+# Projekt: BetterDesktop
+
+Electron + React + TypeScript App ("One App. Your Entire PC."). Details: `README.md`, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`.
+
+## Befehle
+- `npm run dev` – App mit Hot Reload starten
+- `npm run typecheck` – vor jedem Commit mit Code-Änderungen ausführen
+- `npm run build` / `npm run dist` – Build / Windows-Installer
+- Screenshots zum Testen: `BD_SCREENSHOT_DIR=<ordner> npx electron-vite dev` (siehe `src/main/dev/screenshots.ts`)
+
+## Regeln fürs Projekt
+- **Keine Fake-Daten, keine Fake-Buttons.** Was nicht verfügbar ist, wird als "Not available" mit Grund angezeigt; was noch nicht gebaut ist, als "planned" in `modules/registry.tsx`.
+- Neue System-Zugriffe nur über: Kanal in `src/shared/ipc.ts` → validierter Handler (`handle()` mit zod) in `src/main/ipc/register.ts` → typisierte Funktion in `src/preload/index.ts`. Nie beliebige Befehle aus der UI ausführen.
+- Windows-Messwerte über den persistenten Helfer (`win-helper.ps1`), nicht pro Abfrage neue PowerShell starten.
+- UI-Texte in der App auf Englisch.
