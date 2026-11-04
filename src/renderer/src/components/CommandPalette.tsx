@@ -5,8 +5,10 @@ import {
   FolderOpen,
   LayoutDashboard,
   ListTree,
+  AlarmClock,
   Moon,
   PanelLeft,
+  PawPrint,
   Palette,
   Pencil,
   RefreshCw,
@@ -76,6 +78,33 @@ function useCommands(): Command[] {
         run: async () => {
           const r = await window.bd.app.openDataFolder()
           if (!r.ok) toast({ tone: 'danger', title: 'Could not open folder', description: r.error })
+        }
+      },
+      {
+        id: 'act:pet-toggle',
+        title: settings.pet.enabled ? 'Hide desktop pet' : 'Show desktop pet',
+        category: 'Actions',
+        icon: <PawPrint />,
+        keywords: 'companion buddy desktop pet',
+        run: () => update({ pet: { enabled: !settings.pet.enabled } })
+      },
+      {
+        id: 'act:pet-focus',
+        title: settings.pet.focusMode ? 'Pet: turn off focus mode' : 'Pet: focus mode',
+        category: 'Actions',
+        icon: <PawPrint />,
+        keywords: 'desktop pet quiet invisible',
+        run: () => update({ pet: { focusMode: !settings.pet.focusMode } })
+      },
+      {
+        id: 'act:pet-timer',
+        title: 'Start a 25 minute timer',
+        category: 'Actions',
+        icon: <AlarmClock />,
+        keywords: 'pomodoro focus break reminder pet',
+        run: async () => {
+          await window.bd.pet.command({ type: 'timer', minutes: 25 })
+          toast({ tone: 'success', title: 'Timer started', description: '25 minutes' })
         }
       },
       {
